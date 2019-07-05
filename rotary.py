@@ -2,49 +2,68 @@
 
 from __future__ import print_function
 
-import RPi.GPIO as GPIO
-import pygame
+import os
+import re
 import time
 
-# Getting warning "RuntimeWarning: A physical pull up resistor is fitted on this channel!" for PIN2.
-# * Even though I've specified GPIO.RISING, I'm still sporadically
-#   getting callbacks on what I believe should be a falling edge.
-# * Bouncetime of 75ms seems to work flawlessly on the pulse detector
-# * Would be nicer to use pygame.mixer.Sound() objects, but they cannot be MP3 (need WAV or OGG)
+import pygame
+import RPi.GPIO as GPIO
 
-pulses = 0
-number = ''
+RE_SOUND_FILE = re.compile(r'^(?P<number>[\d]+)\....$')
 
-def movement_ended(channel):
-    global pulses, number
-    if pulses > 0:
-        number += str(pulses % 10)
-        print(number)
-        if number.endswith('235898'):
-            print('Playing sound...')
-            pygame.mixer.music.play(loops=0, start=53)
 
-    pulses = 0
+class Dialer(object):
 
-def pulse(channel):
-    global pulses
-    pulses += 1
+    def __init__(self, on_number_dialled, movement_end_channel=2, pulse_channel=3):
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(movement_end_channel, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.setup(pulse_channel, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.add_event_detect(
+            movement_end_channel, GPIO.RISING, callback=self._on_movement_end, bouncetime=200)
+        GPIO.add_event_detect(
+            pulse_channel, GPIO.BOTH, callback=self._on_pulse, bouncetime=75)
 
-def watch(channel, delay_seconds=0.01):
-    while True:
-        print(GPIO.input(channel), end='') 
-        time.sleep(delay_seconds)
+        self._pulses = 0
+        self._dialed = ''
+        self._on_number_dialled = on_number_dialled
+
+    def _on_movement_end(self, _):
+        if self._pulses > 0:
+            self._dialed += str(self._pulses % 10)
+            self._on_number_dialled(self._dialed)
+        self._pulses = 0
+
+    def _on_pulse(self, _):
+        self._pulses += 1
+
+
+class Player(object):
+
+    def __init__(self, sound_dir):
+        pygame.mixer.init()
+
+        self._sound_files = dict()
+        for filename in os.listdir(sound_dir):
+            m = RE_SOUND_FILE.match(filename)
+            if m and os.path.isfile(sound_dir + '/' + filename):
+                number = m.groupdict()['number']
+                self._sound_files[number] = sound_dir + '/' + filename
+
+        print('Loaded sound files for the following numbers:',
+              ', '.join(self._sound_files.keys()))
+
+    def on_number_dialed(self, dialed):
+        for number, filename in self._sound_files.iteritems():
+            if dialed.endswith(number):
+                print('Playing', number)
+                pygame.mixer.music.stop()
+                pygame.mixer.music.load(filename)
+                pygame.mixer.music.play()
+
 
 def main():
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(2, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(3, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.add_event_detect(2, GPIO.RISING, callback=movement_ended, bouncetime=200)
-    GPIO.add_event_detect(3, GPIO.BOTH, callback=pulse, bouncetime=75)
-
-    pygame.mixer.init()
-    pygame.mixer.music.load("sounds/final_countdown.mp3")
-    pygame.mixer.music.set_volume(1.0)
+    player = Player('sounds/')
+    Dialer(player.on_number_dialed)
 
     print('Press CTRL+C to quit.')
     try:

@@ -20,7 +20,7 @@ Killer features:
   * `noservice.mp3` should contain the sound to be played on no service ([example](https://www.youtube.com/watch?v=rKFAA-ntKXg))
   * `$NUMBER.mp3` will be played if $NUMBER is dialed on the rotary dial. Eg, `231344.mp3` will be played if you dial 231344.
 * Attach a USB sound dongle to your Raspberry Pi, and connect it to the earpiece's speaker. I simply attached a 3.5mm plug to the cable coming from the earpiece.
-* Run it: `$ ./rotary.pi`
+* Run it: `$ python rotary/main.py`
 
 ## Bugs and issues
 
